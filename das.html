@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Live Chat Monitor</title>
+    <style>
+        body { font-family: sans-serif; background-color: #121212; color: white; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        
+        /* Input Box Styling */
+        .controls { background: #1e1e1e; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        input { padding: 8px; width: 40%; background: #333; border: none; color: white; border-radius: 4px; }
+        button { padding: 8px 15px; background: #cc0000; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #ff0000; }
+
+        /* Chat Box Styling */
+        #chat-display { height: 400px; overflow-y: auto; border: 1px solid #333; padding: 10px; border-radius: 8px; background: #000; }
+        
+        /* Individual Message Styling */
+        .chat-item { display: flex; align-items: center; margin-bottom: 12px; padding: 8px; background: #1f1f1f; border-radius: 8px; animation: fadeIn 0.5s; }
+        .chat-img { width: 40px; height: 40px; border-radius: 50%; margin-right: 12px; border: 2px solid #cc0000; }
+        .chat-content { display: flex; flex-direction: column; }
+        .chat-name { font-weight: bold; color: #aaa; font-size: 0.9em; margin-bottom: 2px; }
+        .chat-message { font-size: 1.1em; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🔴 Live Chat Monitor</h2>
+    
+    <div class="controls">
+        <input type="text" id="apiKey" placeholder="Enter API Key">
+        <input type="text" id="videoId" placeholder="Enter Video ID">
+        <button onclick="startTracking()">Start Tracking</button>
+    </div>
+
+    <div id="chat-display">
+        <p style="text-align:center; color:#555;">Waiting for chat...</p>
+    </div>
+</div>
+
+<script>
+    let liveChatId = null;
+    let nextPageToken = null;
+    let intervalId = null;
+
+    async function startTracking() {
+        const apiKey = document.getElementById('apiKey').value;
+        const videoId = document.getElementById('videoId').value;
+
+        if (!apiKey || !videoId) {
+            alert("कृपया API Key और Video ID दोनों भरें।");
+            return;
+        }
+
+        // 1. Get Live Chat ID from Video ID
+        const url = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${videoId}&key=${apiKey}`;
+        
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.items && data.items.length > 0) {
+                liveChatId = data.items[0].liveStreamingDetails.activeLiveChatId;
+                console.log("Chat ID Found:", liveChatId);
+                document.getElementById('chat-display').innerHTML = ""; // Clear waiting message
+                fetchMessages(apiKey); // Initial fetch
+                
+                // Poll every 5 seconds
+                if (intervalId) clearInterval(intervalId);
+                intervalId = setInterval(() => fetchMessages(apiKey), 5000);
+            } else {
+                alert("Live Chat ID नहीं मिला। क्या वीडियो लाइव है?");
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Error fetching video details.");
+        }
+    }
+
+    async function fetchMessages(apiKey) {
+        if (!liveChatId) return;
+
+        let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&key=${apiKey}`;
+        if (nextPageToken) {
+            url += `&pageToken=${nextPageToken}`;
+        }
+
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+
+            nextPageToken = data.nextPageToken; // Update token for next fetch
+
+            if (data.items) {
+                const chatBox = document.getElementById('chat-display');
+                
+                data.items.forEach(item => {
+                    const message = item.snippet.displayMessage;
+                    const authorName = item.authorDetails.displayName;
+                    const authorImg = item.authorDetails.profileImageUrl;
+
+                    // Create HTML Element
+                    const div = document.createElement('div');
+                    div.className = 'chat-item';
+                    div.innerHTML = `
+                        <img src="${authorImg}" class="chat-img" alt="User">
+                        <div class="chat-content">
+                            <span class="chat-name">${authorName}</span>
+                            <span class="chat-message">${message}</span>
+                        </div>
+                    `;
+                    chatBox.prepend(div); // Newest on top
+                });
+            }
+        } catch (error) {
+            console.error("Error fetching chat:", error);
+        }
+    }
+</script>
+
+</body>
+</html>
