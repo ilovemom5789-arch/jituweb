@@ -18,13 +18,29 @@
         #chat-display { height: 400px; overflow-y: auto; border: 1px solid #333; padding: 10px; border-radius: 8px; background: #000; }
         
         /* Individual Message Styling */
-        .chat-item { display: flex; align-items: center; margin-bottom: 12px; padding: 8px; background: #1f1f1f; border-radius: 8px; animation: fadeIn 0.5s; }
+        .chat-item { display: flex; align-items: center; margin-bottom: 12px; padding: 8px; background: #1f1f1f; border-radius: 8px; animation: popUp 0.3s ease-out; }
         .chat-img { width: 40px; height: 40px; border-radius: 50%; margin-right: 12px; border: 2px solid #cc0000; }
         .chat-content { display: flex; flex-direction: column; }
-        .chat-name { font-weight: bold; color: #aaa; font-size: 0.9em; margin-bottom: 2px; }
+        .chat-name { font-weight: bold; color: #00e5ff; font-size: 0.95em; margin-bottom: 2px; }
+        .chat-time { font-size: 0.75em; color: #888; margin-left: 8px; font-weight: normal; }
         .chat-message { font-size: 1.1em; }
         
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes popUp { 0% { opacity: 0; transform: scale(0.9) translateY(10px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+
+        /* Popup Notification Styles */
+        .popup-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .message-popup { 
+            background: rgba(20, 20, 20, 0.95); border-left: 4px solid #00e5ff; padding: 12px; border-radius: 8px; color: white; width: 320px; 
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5); display: flex; align-items: flex-start;
+            animation: slideIn 0.4s ease-out, fadeOut 0.5s 4.5s forwards; 
+        }
+        .popup-img { width: 40px; height: 40px; border-radius: 50%; margin-right: 12px; border: 2px solid #00e5ff; }
+        .popup-content { flex: 1; }
+        .popup-name { font-weight: bold; color: #00e5ff; font-size: 0.95em; display: block; margin-bottom: 4px; }
+        .popup-text { font-size: 1em; line-height: 1.4; color: #eee; }
+        
+        @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
     </style>
 </head>
 <body>
@@ -41,12 +57,15 @@
     <div id="chat-display">
         <p style="text-align:center; color:#555;">Waiting for chat...</p>
     </div>
+    <div id="popup-container" class="popup-container"></div>
 </div>
 
 <script>
     let liveChatId = null;
     let nextPageToken = null;
     let intervalId = null;
+    let isFetching = false;
+    let isFirstFetch = true;
 
     async function startTracking() {
         const apiKey = document.getElementById('apiKey').value;
@@ -67,12 +86,13 @@
             if (data.items && data.items.length > 0) {
                 liveChatId = data.items[0].liveStreamingDetails.activeLiveChatId;
                 console.log("Chat ID Found:", liveChatId);
+                isFirstFetch = true; // Reset for new tracking
                 document.getElementById('chat-display').innerHTML = ""; // Clear waiting message
                 fetchMessages(apiKey); // Initial fetch
                 
-                // Poll every 5 seconds
+                // Poll every 1 second
                 if (intervalId) clearInterval(intervalId);
-                intervalId = setInterval(() => fetchMessages(apiKey), 5000);
+                intervalId = setInterval(() => fetchMessages(apiKey), 1000);
             } else {
                 alert("Live Chat ID नहीं मिला। क्या वीडियो लाइव है?");
             }
@@ -83,7 +103,8 @@
     }
 
     async function fetchMessages(apiKey) {
-        if (!liveChatId) return;
+        if (!liveChatId || isFetching) return;
+        isFetching = true;
 
         let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&key=${apiKey}`;
         if (nextPageToken) {
@@ -101,8 +122,9 @@
                 
                 data.items.forEach(item => {
                     const message = item.snippet.displayMessage;
-                    const authorName = item.authorDetails.displayName;
-                    const authorImg = item.authorDetails.profileImageUrl;
+                    const authorName = item.authorDetails ? item.authorDetails.displayName : 'Anonymous';
+                    const authorImg = item.authorDetails ? item.authorDetails.profileImageUrl : '';
+                    const timestamp = new Date(item.snippet.publishedAt).toLocaleTimeString();
 
                     // Create HTML Element
                     const div = document.createElement('div');
@@ -110,16 +132,46 @@
                     div.innerHTML = `
                         <img src="${authorImg}" class="chat-img" alt="User">
                         <div class="chat-content">
-                            <span class="chat-name">${authorName}</span>
+                            <span class="chat-name">${authorName} <span class="chat-time">${timestamp}</span></span>
                             <span class="chat-message">${message}</span>
                         </div>
                     `;
-                    chatBox.prepend(div); // Newest on top
+                    chatBox.appendChild(div); // Newest at bottom
+
+                    // Show Popup for new messages (skip initial load)
+                    if (!isFirstFetch) {
+                        showPopup(authorName, message, authorImg);
+                    }
                 });
+
+                // Auto-scroll to bottom
+                chatBox.scrollTop = chatBox.scrollHeight;
+                
+                // After first batch, enable popups
+                isFirstFetch = false;
             }
         } catch (error) {
             console.error("Error fetching chat:", error);
+        } finally {
+            isFetching = false;
         }
+    }
+
+    function showPopup(name, message, img) {
+        const container = document.getElementById('popup-container');
+        const div = document.createElement('div');
+        div.className = 'message-popup';
+        div.innerHTML = `
+            <img src="${img}" class="popup-img">
+            <div class="popup-content">
+                <span class="popup-name">${name}</span>
+                <span class="popup-text">${message}</span>
+            </div>
+        `;
+        container.appendChild(div);
+        
+        // Remove from DOM after animation (5s total)
+        setTimeout(() => { div.remove(); }, 5000);
     }
 </script>
 
